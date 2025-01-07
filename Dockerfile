@@ -1,8 +1,8 @@
 # syntax = docker/dockerfile:experimental
 
-ARG PHP_VERSION=8.2
+ARG PHP_VERSION=8.3
 ARG NODE_VERSION=18
-FROM ubuntu:22.04 as base
+FROM ubuntu:22.04 as base-os
 LABEL fly_launch_runtime="laravel"
 
 # PHP_VERSION needs to be repeated here
@@ -25,15 +25,16 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PHP_UPLOAD_MAX_FILE_SIZE=100M \
     PHP_ALLOW_URL_FOPEN=Off
 
-# Prepare base container: 
+# Prepare base container:
 # 1. Install PHP, Composer
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 COPY .fly/php/ondrej_ubuntu_php.gpg /etc/apt/trusted.gpg.d/ondrej_ubuntu_php.gpg
 ADD .fly/php/packages/${PHP_VERSION}.txt /tmp/php-packages.txt
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends gnupg2 ca-certificates git-core curl zip unzip \
-                                                  rsync vim-tiny htop sqlite3 nginx supervisor cron \
+    && apt-get install -y --no-install-recommends gnupg2 ca-certificates git-core curl zip unzip fuse3 \
+                                                  rsync vim-tiny htop sqlite3 nginx supervisor cron  \
+    wget dnsutils \
     && ln -sf /usr/bin/vim.tiny /etc/alternatives/vim \
     && ln -sf /etc/alternatives/vim /usr/bin/vim \
     && echo "deb http://ppa.launchpad.net/ondrej/php/ubuntu jammy main" > /etc/apt/sources.list.d/ondrej-ubuntu-php-focal.list \
@@ -44,19 +45,25 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /usr/share/doc/*
 
+RUN wget https://github.com/fullstorydev/grpcurl/releases/download/v1.9.2/grpcurl_1.9.2_linux_amd64.deb && apt install -y ./grpcurl_1.9.2_linux_amd64.deb
 # 2. Copy config files to proper locations
 COPY .fly/nginx/ /etc/nginx/
 COPY .fly/fpm/ /etc/php/${PHP_VERSION}/fpm/
 COPY .fly/supervisor/ /etc/supervisor/
 COPY .fly/entrypoint.sh /entrypoint
 COPY .fly/start-nginx.sh /usr/local/bin/start-nginx
+
+
+#sqld!!
+COPY .fly/sqld /usr/local/bin/sqld
+
 RUN chmod 754 /usr/local/bin/start-nginx
-    
+
 # 3. Copy application code, skipping files based on .dockerignore
 COPY . /var/www/html
 WORKDIR /var/www/html
 
-# 4. Setup application dependencies 
+# 4. Setup application dependencies
 RUN composer install --optimize-autoloader --no-dev \
     && mkdir -p storage/logs \
     && php artisan optimize:clear \
@@ -64,22 +71,24 @@ RUN composer install --optimize-autoloader --no-dev \
     && echo "MAILTO=\"\"\n* * * * * www-data /usr/bin/php /var/www/html/artisan schedule:run" > /etc/cron.d/laravel \
     && sed -i='' '/->withMiddleware(function (Middleware \$middleware) {/a\
         \$middleware->trustProxies(at: "*");\
-    ' bootstrap/app.php; \ 
+    ' bootstrap/app.php; \
     if [ -d .fly ]; then cp .fly/entrypoint.sh /entrypoint; chmod +x /entrypoint; fi;
 
+FROM base-os as vendor
+WORKDIR /var/www/html
+COPY . .
+RUN composer install --optimize-autoloader --no-dev
 
-
+FROM base-os as base
+COPY --from=vendor /var/www/html/vendor /var/www/html/vendor
 
 # Multi-stage build: Build static assets
 # This allows us to not include Node within the final container
 FROM node:${NODE_VERSION} as node_modules_go_brrr
 
-RUN mkdir /app
-
-RUN mkdir -p  /app
 WORKDIR /app
+COPY --from=vendor /var/www/html/vendor ./vendor
 COPY . .
-COPY --from=base /var/www/html/vendor /app/vendor
 
 # Use yarn or npm depending on what type of
 # lock file we might find. Defaults to
@@ -119,6 +128,7 @@ RUN rsync -ar /var/www/html/public-npm/ /var/www/html/public/ \
     && chown -R www-data:www-data /var/www/html/public
 
 # 5. Setup Entrypoint
-EXPOSE 8080
+EXPOSE 8080 8082 5001
+
 
 ENTRYPOINT ["/entrypoint"]
