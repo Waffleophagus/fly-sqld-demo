@@ -55,7 +55,11 @@ COPY .fly/start-nginx.sh /usr/local/bin/start-nginx
 
 
 #sqld!!
-COPY .fly/sqld /usr/local/bin/sqld
+RUN wget https://github.com/tursodatabase/libsql/releases/download/libsql-server-v0.24.31/libsql-server-x86_64-unknown-linux-gnu.tar.xz
+RUN tar -xf libsql-server-x86_64-unknown-linux-gnu.tar.xz
+RUN mv ./libsql-server-x86_64-unknown-linux-gnu/sqld /usr/local/bin/sqld
+RUN rm libsql-server-x86_64-unknown-linux-gnu.tar.xz
+
 
 RUN chmod 754 /usr/local/bin/start-nginx
 
