@@ -1,0 +1,67 @@
+services:
+    laravel.test:
+        build:
+            context: './vendor/laravel/sail/runtimes/8.4'
+            dockerfile: Dockerfile
+            args:
+                WWWGROUP: '${WWWGROUP}'
+        image: 'sail-8.3/app'
+        extra_hosts:
+            - 'host.docker.internal:host-gateway'
+        ports:
+            - '${APP_PORT:-80}:80'
+            - '${VITE_PORT:-5173}:${VITE_PORT:-5173}'
+        environment:
+            WWWUSER: '${WWWUSER}'
+            LARAVEL_SAIL: 1
+            XDEBUG_MODE: '${SAIL_XDEBUG_MODE:-debug}'
+            XDEBUG_CONFIG: '${SAIL_XDEBUG_CONFIG:-client_host=host.docker.internal}'
+            IGNITION_LOCAL_SITES_PATH: '${PWD}'
+        volumes:
+            - '.:/var/www/html'
+        networks:
+            - sail
+        depends_on:
+            - libsql-server
+    libsql-server:
+        container_name: sqld
+
+        tty: true
+        stdin_open: true
+        environment:
+            - SQLD_DB_PATH=/tmp/db
+            - SQLD_GRPC_LISTEN_ADDR=0.0.0.0:5001
+            - enable-http-console
+            - SQLD_ENABLE_BOTTOMLESS_REPLICATION=true
+            - LIBSQL_BOTTOMLESS_ENDPOINT=http://minio:9000
+            - LIBSQL_BOTTOMLESS_AWS_SECRET_ACCESS_KEY=4IVNu5jyyKWiDCCcl696WAq7IJPfyYFo5TPvZf40        # You will need to login to Minio and generate this.
+            - LIBSQL_BOTTOMLESS_AWS_ACCESS_KEY_ID=trXWHHfOybG16RgGChLH               #  You will need to login to Minio and generate this.
+            - LIBSQL_BOTTOMLESS_AWS_DEFAULT_REGION=auto
+            - SQLD_HTTP_LISTEN_ADDR=127.0.0.1:8081
+        volumes:
+            - './local-env-stuff/sqld-server:/tmp'
+        networks:
+            - sail
+
+        image: ghcr.io/tursodatabase/libsql-server:latest
+        depends_on:
+            - minio
+
+    minio:
+        ports:
+            - 9000:9000
+            - 9001:9001
+        container_name: minio
+        volumes:
+            - ./local-env-stuff/minio:/data
+        environment:
+            - MINIO_ROOT_USER=ROOTNAME
+            - MINIO_ROOT_PASSWORD=CHANGEME123
+        image: quay.io/minio/minio
+        command: server /data --console-address ":9001"
+        networks:
+            - sail
+networks:
+    sail:
+        driver: bridge
+
