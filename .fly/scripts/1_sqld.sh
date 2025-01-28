@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # This has to be your app's .internal domain name on fly
-CHECK_URL="fly-sqld-demo.internal"
+CHECK_URL="${FLY_APP_NAME}.internal"
 PRIMARY_FLAGS="--http-listen-addr=[::]:8082 --grpc-listen-addr=[::]:5001 --enable-bottomless-replication"
 CONFIG_FILE="/etc/supervisor/conf.d/sqld.conf"
 
